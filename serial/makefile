@@ -1,5 +1,5 @@
 all:
-	gcc -I /usr/include/SDL -o frac frac.c -lSDL --std=c99
+	gcc -I /usr/include/SDL -o frac frac.c -lSDL
 
 clean:
 	rm -f frac

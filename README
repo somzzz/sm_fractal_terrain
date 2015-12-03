@@ -1,3 +1,5 @@
+Requires SDL
+sudo apt-get install libsdl-ttf2.0-dev
 
 Controls:
 
