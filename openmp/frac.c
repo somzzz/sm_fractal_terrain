@@ -6,8 +6,8 @@
 #include <omp.h>
 
 
-#define WIDTH 4096
-#define HEIGHT 4096
+#define WIDTH 4096 * 2
+#define HEIGHT 4096 * 2
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
@@ -24,7 +24,7 @@ typedef struct {
 } Point;
 
 SDL_Surface *screen;
-int heightmap[WIDTH + 1][HEIGHT + 1];
+int heightmap[WIDTH +1][HEIGHT + 1];
 SDL_Event event;
 
 static void square_step(SDL_Rect *r, float deviance);
@@ -132,9 +132,9 @@ static void make_map(void) {
     {
         //Reset the whole heightmap to the minimum height
         #pragma omp for
-        for (i = 0; i < HEIGHT * WIDTH; i++) {
-                heightmap[i / HEIGHT][i % HEIGHT] = MINHEIGHT;
-        }
+        for (e = 0; e < HEIGHT; ++e)
+            for (i = 0; i < WIDTH; ++i)
+                heightmap[i][e] = MINHEIGHT;
 
         //Add our starting corner points
 
@@ -155,17 +155,18 @@ static void make_map(void) {
             {
                 #pragma omp section
                 {
-                    for (ry = 0; ry < HEIGHT / 2; ry += h) {
+   
+                    for (ry = 0; ry < HEIGHT; ry += h) {
                         for (rx = 0; rx < WIDTH; rx += w) {
                             SDL_Rect r;
                             r.h = h; r.w = w;
                             r.x = rx; r.y = ry;
                             heightmap[r.x + (r.w >> 1)][r.y + (r.h >> 1)] =
-                            rect_avg_heights(&r)
-                                + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+                                rect_avg_heights(&r)
+                                    + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
                         }
                     }
-                }
+               }
 
                 #pragma omp section
                 {
@@ -214,7 +215,6 @@ static void make_map(void) {
 
                 #pragma omp section
                 {
-                    int rx, ry;
                     for (ry = 0; ry < HEIGHT; ry += h) {
                         for (rx = 0 - (w >> 1); rx < WIDTH - (w >> 1); rx += w) {
                             SDL_Rect r;
@@ -225,8 +225,8 @@ static void make_map(void) {
                                     + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
                         }
                     }
-                }
-            }
+                 }
+             }
             
             // clock_gettime(CLOCK_REALTIME, &stop1);
             // accum = ( stop1.tv_sec - start1.tv_sec )
@@ -244,10 +244,9 @@ static void make_map(void) {
 
         // Display on screen
         #pragma omp for
-        for (i = 0; i < HEIGHT * WIDTH; i++) {
-            set_point(i / HEIGHT, i % HEIGHT,
-                height_to_colour(heightmap[i / HEIGHT][i % HEIGHT]));
-        }
+        for (e = 0; e < HEIGHT; ++e)
+            for (i = 0; i < WIDTH; ++i)
+                set_point(i, e, height_to_colour(heightmap[i][e]));
     }
 
     clock_gettime(CLOCK_REALTIME, &stop);

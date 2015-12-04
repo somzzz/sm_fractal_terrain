@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define WIDTH 4096
-#define HEIGHT 4096
+#define WIDTH 4096 * 2
+#define HEIGHT 4096 * 2
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
@@ -25,7 +25,7 @@ typedef struct {
 
 
 SDL_Surface *screen;
-int heightmap[WIDTH][HEIGHT+1];
+int heightmap[WIDTH][HEIGHT];
 SDL_Event event;
 
 static void square_step(SDL_Rect *r, float deviance);
@@ -181,49 +181,39 @@ static void make_map(void) {
 static void get_keypress(void) {
     struct timespec start, stop;
     double accum;
-    int is_event;
 
     //heightmap_to_screen();
     SDL_Flip(screen);
 
     while (1) {
         SDL_PollEvent(&event);
-        is_event = 0;
 
         if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 exit(0);
             }
             else if (event.key.keysym.sym == SDLK_RIGHTBRACKET) {
-                is_event = 1;
-                clock_gettime(CLOCK_REALTIME, &start);
                 shift_all(200);
             }
             else if (event.key.keysym.sym == SDLK_LEFTBRACKET) {
-                is_event = 1;
-                clock_gettime(CLOCK_REALTIME, &start);
                 shift_all(-200);
             }
             else if (event.key.keysym.sym == SDLK_SPACE) {
-                is_event = 1;
                 clock_gettime(CLOCK_REALTIME, &start);
+                
                 make_map();
+                heightmap_to_screen();
+                
+                clock_gettime(CLOCK_REALTIME, &stop);
+                accum = ( stop.tv_sec - start.tv_sec )
+                    + (double)( stop.tv_nsec - start.tv_nsec )
+                        / (double)BILLION;
+                printf("[SERIAL] Overall time on key pressed event: %lf\n", accum);
             } else
                 break;
         }
 
-        if (is_event == 1) {    
-            clock_gettime(CLOCK_REALTIME, &stop);
-            accum = ( stop.tv_sec - start.tv_sec )
-                + (double)( stop.tv_nsec - start.tv_nsec )
-                    / (double)1000000000;
-            printf("[SERIAL] Overall time on key pressed event: %lf\n", accum);
-        }
-
-        //heightmap_to_screen();
-
         SDL_Flip(screen);
-        SDL_Delay(10);
     }
 }
 
@@ -237,14 +227,13 @@ int main(void) {
 
     clock_gettime(CLOCK_REALTIME, &start);
     make_map();
+    heightmap_to_screen();
     clock_gettime(CLOCK_REALTIME, &stop);
 
     accum = ( stop.tv_sec - start.tv_sec )
              + (double)( stop.tv_nsec - start.tv_nsec )
                / (double)1000000000;
     printf("[SERIAL] Make_map: %lf\n", accum);
-
-    heightmap_to_screen();
     SDL_Flip(screen);
 
     while(1) {
