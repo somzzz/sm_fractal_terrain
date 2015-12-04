@@ -24,7 +24,7 @@ typedef struct {
 } Point;
 
 SDL_Surface *screen;
-int heightmap[WIDTH][HEIGHT + 1];
+int heightmap[WIDTH + 1][HEIGHT + 1];
 SDL_Event event;
 
 static void square_step(SDL_Rect *r, float deviance);
@@ -77,6 +77,7 @@ static int diam_avg_heights(SDL_Rect *r) {
 
     divisors = 1;
     total = 0;
+
     //TOP
     if (r->y >= 0) {
         total += heightmap[r->x + r->w / 2][r->y];
@@ -89,6 +90,7 @@ static int diam_avg_heights(SDL_Rect *r) {
     }
     //RIGHT
     total += heightmap[(r->x + r->w) % WIDTH][r->y + r->h / 2];
+
     //BOTTOM
     if (r->y + r->h < HEIGHT) {
         total += heightmap[r->x + r->w / 2][r->y + r->h];
@@ -111,22 +113,22 @@ static void shift_all(int amnt) {
 }
 
 static void make_map(void) {
-    int w = WIDTH;
-    int h = HEIGHT;
-    float deviance;
-    int i, e;
+    register int w = WIDTH;
+    register int h = HEIGHT;
+    register float deviance;
+    register int i, e;
 
-    int id = omp_get_thread_num();
-    int rx, ry;
+    register int id = omp_get_thread_num();
 
-    struct timespec start, stop;
+    struct timespec start, stop, start1, stop1, start12, stop12;
     double accum;
+    int rx, ry;
 
     
     deviance = 1.0;
     clock_gettime(CLOCK_REALTIME, &start);
 
-    #pragma omp parallel private(id, rx, ry, i, e) shared(w, h)
+    #pragma omp parallel private(id, i, e, rx, ry) shared(w, h)
     {
         //Reset the whole heightmap to the minimum height
         #pragma omp for
@@ -135,42 +137,75 @@ static void make_map(void) {
         }
 
         //Add our starting corner points
-        #pragma omp barrier
 
         #pragma omp single
         {
             heightmap[0][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
             heightmap[0][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
+            heightmap[WIDTH][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
+            heightmap[WIDTH][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
         }
         
-        #pragma omp barrier
-
         while(w >= 2 && h >= 2) {
                
             // Diamond step 
-            #pragma omp for
-            for (ry = 0; ry < HEIGHT; ry += h) {
-                for (rx = 0; rx < WIDTH; rx += w) {
-                    SDL_Rect r;
-                    r.h = h; r.w = w;
-                    r.x = rx; r.y = ry;
-                    heightmap[r.x + r.w / 2][r.y + r.h / 2] =
-                        rect_avg_heights(&r)
-                            + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-                }
-            }
-
-            // Square step
-            #pragma omp sections 
+            // clock_gettime(CLOCK_REALTIME, &start12);
+            
+            #pragma omp sections nowait
             {
                 #pragma omp section
                 {
-                    for (ry = 0 - h / 2; ry < HEIGHT; ry += h) {
+                    for (ry = 0; ry < HEIGHT / 2; ry += h) {
                         for (rx = 0; rx < WIDTH; rx += w) {
                             SDL_Rect r;
                             r.h = h; r.w = w;
                             r.x = rx; r.y = ry;
-                            heightmap[r.x + r.w / 2][r.y + r.h / 2] =
+                            heightmap[r.x + (r.w >> 1)][r.y + (r.h >> 1)] =
+                            rect_avg_heights(&r)
+                                + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+                        }
+                    }
+                }
+
+                #pragma omp section
+                {
+                    for (ry = HEIGHT / 2; ry < HEIGHT; ry += h) {
+                        for (rx = 0 ; rx < WIDTH; rx += w) {
+                            SDL_Rect r;
+                            r.h = h; r.w = w;
+                            r.x = rx; r.y = ry;
+                            heightmap[r.x + (r.w >> 1)][r.y + (r.h >> 1)] =
+                            rect_avg_heights(&r)
+                                + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+                        }
+                    }
+                }
+            }
+            
+            // clock_gettime(CLOCK_REALTIME, &stop12);
+
+            // accum = ( stop12.tv_sec - start12.tv_sec )
+            //     + (double)( stop12.tv_nsec - start12.tv_nsec )
+            //         / (double) BILLION;
+            // printf("[OPENMP] Diamonds: %lf\n", accum);
+
+
+            #pragma omp barrier
+
+            // clock_gettime(CLOCK_REALTIME, &start1);
+
+
+            // Square step
+            #pragma omp sections
+            {
+                #pragma omp section
+                {
+                    for (ry = 0 - (h >> 1); ry < HEIGHT; ry += h) {
+                        for (rx = 0; rx < WIDTH; rx += w) {
+                            SDL_Rect r;
+                            r.h = h; r.w = w;
+                            r.x = rx; r.y = ry;
+                            heightmap[r.x + (r.w >> 1)][r.y + (r.h >> 1)] =
                                 diam_avg_heights(&r)
                                     + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
                         }
@@ -179,27 +214,31 @@ static void make_map(void) {
 
                 #pragma omp section
                 {
+                    int rx, ry;
                     for (ry = 0; ry < HEIGHT; ry += h) {
-                        for (rx = 0 - w / 2; rx + w / 2 < WIDTH; rx += w) {
+                        for (rx = 0 - (w >> 1); rx < WIDTH - (w >> 1); rx += w) {
                             SDL_Rect r;
                             r.h = h; r.w = w;
                             r.x = rx; r.y = ry;
-                            heightmap[r.x + r.w / 2][r.y + r.h / 2] =
+                            heightmap[r.x + (r.w >> 1)][r.y + (r.h >> 1)] =
                                 diam_avg_heights(&r)
                                     + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
                         }
                     }
                 }
             }
-
-            #pragma omp barrier
+            
+            // clock_gettime(CLOCK_REALTIME, &stop1);
+            // accum = ( stop1.tv_sec - start1.tv_sec )
+            //     + (double)( stop1.tv_nsec - start1.tv_nsec )
+            //         / (double) BILLION;
+            // printf("[OPENMP] Squares : %lf\n", accum);
 
             #pragma omp single
             {
                 deviance *= REDUCTION;
-
-                w /= 2;
-                h /= 2;
+                w = w >> 1;
+                h = h >> 1;
             }
         }
 
@@ -212,10 +251,13 @@ static void make_map(void) {
     }
 
     clock_gettime(CLOCK_REALTIME, &stop);
-            accum = ( stop.tv_sec - start.tv_sec )
+    accum = ( stop.tv_sec - start.tv_sec )
                 + (double)( stop.tv_nsec - start.tv_nsec )
-                    / (double)1000000000;
+                    / (double) BILLION;
             printf("[OPENMP] Overall time on key pressed event: %lf\n", accum);
+
+    
+    SDL_Flip(screen);
 }
 
 static void get_keypress(void) {
@@ -242,8 +284,8 @@ static void get_keypress(void) {
                 break;
         }
 
-        SDL_Flip(screen);
-        SDL_Delay(10);
+        //SDL_Flip(screen);
+        //SDL_Delay(10);
     }
 }
 
