@@ -8,8 +8,8 @@
 #include <mpi.h>
 
 
-#define WIDTH 512
-#define HEIGHT 512
+#define WIDTH 4096
+#define HEIGHT 4096
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
@@ -135,9 +135,13 @@ static void draw_all_squares(int w, int h, float deviance) {
     r.w = w;
     r.h = h;
 
-    for (r.y = 0; r.y < HEIGHT; r.y += r.h)
-        for (r.x = 0; r.x < WIDTH; r.x += r.w)
-            heightmap[r.x + r.w / 2][r.y + r.h / 2] = rect_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+    for (r.y = 0; r.y < HEIGHT; r.y += r.h) {
+        for (r.x = 0; r.x < WIDTH; r.x += r.w) {
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] =
+                rect_avg_heights(&r)
+                    + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+        }
+    }
 }
 
 static void draw_all_diamonds(int w, int h, float deviance) {
@@ -145,12 +149,21 @@ static void draw_all_diamonds(int w, int h, float deviance) {
     r.w = w;
     r.h = h;
 
-    for (r.y = 0 - r.h / 2; r.y < HEIGHT; r.y += r.h)
-        for (r.x = 0; r.x < WIDTH; r.x += r.w)
-            heightmap[r.x + r.w / 2][r.y + r.h / 2] = diam_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-    for (r.y = 0; r.y < HEIGHT; r.y += r.h)
-        for (r.x = 0 - r.w / 2; r.x + r.w / 2 < WIDTH; r.x += r.w)
-            heightmap[r.x + r.w / 2][r.y + r.h / 2] = diam_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+    for (r.y = 0 - r.h / 2; r.y < HEIGHT; r.y += r.h) {
+        for (r.x = 0; r.x < WIDTH; r.x += r.w) {
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] =
+                diam_avg_heights(&r)
+                    + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+        }
+    }
+
+    for (r.y = 0; r.y < HEIGHT; r.y += r.h) {
+        for (r.x = 0 - r.w / 2; r.x + r.w / 2 < WIDTH; r.x += r.w) {
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] =
+                diam_avg_heights(&r)
+                    + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+        }
+    }
 }
 
 static void shift_all(int amnt) {
@@ -234,7 +247,12 @@ int main(int argc, char *argv[]) {
         screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
     }
 
+
     while (1) {
+
+        if (myid == master) {
+            clock_gettime(CLOCK_REALTIME, &start);
+        }
 
         // Init heightmap for everybody
         for (e = 0; e < HEIGHT; ++e)
@@ -313,8 +331,6 @@ int main(int argc, char *argv[]) {
                 for (j = 0; j < W; j++) {
                     memcpy(&heightmap[t.x + j][t.y], buffer + (j * W), W * sizeof(int));
                 }
-
-
             }
 
         } else {
@@ -326,8 +342,8 @@ int main(int argc, char *argv[]) {
             // init
             heightmap[0][0] = t.v1;
             heightmap[0][h] = t.v2;
-            //heightmap[w][0] = t.v3;
-            //heightmap[w][h] = t.v4;
+            heightmap[w][0] = t.v3;
+            heightmap[w][h] = t.v4;
 
             while (h >= 2 || w >= 2) {
                 draw_all_squares(w, h, deviance);
@@ -354,6 +370,15 @@ int main(int argc, char *argv[]) {
 
         MPI_Barrier(MPI_COMM_WORLD);
         free(buffer);
+        
+        if (myid == master) {
+            clock_gettime(CLOCK_REALTIME, &stop);
+
+            accum = ( stop.tv_sec - start.tv_sec )
+            + (double)( stop.tv_nsec - start.tv_nsec )
+               / (double)1000000000;
+            printf("[MPI] Overall time on key pressed event: %lf\n", accum);
+        }
 
         if (myid == master) {
             heightmap_to_screen();
