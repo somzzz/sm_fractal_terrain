@@ -16,7 +16,6 @@
 
 #define TASK_TAG 1
 #define RESULT_TAG 2
-#define ACK_TAG 3
 
 //Fiddle with these two to make different types of landscape at different distances
 #define RANGE_CHANGE 13000
@@ -358,11 +357,6 @@ int main(int argc, char *argv[]) {
                 memcpy(buffer + (i * H), &heightmap[i][0], H * sizeof(int));
             }
 
-        //             SDL_Init(SDL_INIT_EVERYTHING);
-        // screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
-        //                 heightmap_to_screen();
-        //     SDL_Flip(screen);
-
             // Send the buffer to master
             MPI_Send(&t, 1, taskType, master, TASK_TAG, MPI_COMM_WORLD);
             MPI_Send (buffer, H * W, MPI_INT, master, RESULT_TAG, MPI_COMM_WORLD);
@@ -370,7 +364,7 @@ int main(int argc, char *argv[]) {
 
         MPI_Barrier(MPI_COMM_WORLD);
         free(buffer);
-        
+
         if (myid == master) {
             clock_gettime(CLOCK_REALTIME, &stop);
 
