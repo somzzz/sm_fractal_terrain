@@ -248,6 +248,8 @@ int main(int argc, char *argv[]) {
 
 
     while (1) {
+        w = WIDTH;
+        h = HEIGHT;
 
         if (myid == master) {
             clock_gettime(CLOCK_REALTIME, &start);
@@ -300,7 +302,6 @@ int main(int argc, char *argv[]) {
                     for (e = 0; e < WIDTH; e += w) {
 
                         if (proc > numprocs - 1) {
-                            printf("wtf\n");
                             exit(1);
                         }
 

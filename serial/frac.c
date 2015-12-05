@@ -150,8 +150,8 @@ static void make_map(void) {
 
     //Reset the whole heightmap to the minimum height
     for (e = 0; e < HEIGHT; ++e)
-         for (i = 0; i < WIDTH; ++i)
-             heightmap[i][e] = MINHEIGHT;
+        for (i = 0; i < WIDTH; ++i)
+            heightmap[i][e] = MINHEIGHT;
 
     //Add our starting corner points
     heightmap[0][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
