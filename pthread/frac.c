@@ -3,12 +3,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <iostream>
 
-#include <sstream>
-#include <queue>
 #include "errors.h"
 #include <pthread.h>
+#include <math.h>
 
 #define WIDTH 4096
 #define HEIGHT 4096
@@ -18,23 +16,16 @@
 
 #define NUM_THREADS 8
 
-
 //Fiddle with these two to make different types of landscape at different distances
 #define RANGE_CHANGE 13000
 #define REDUCTION 0.7
+#define BILLION  1000000000L;
 
 
 typedef struct {
     int x;
     int y;
 } Point;
-
-
-typedef struct {
-    int x, y;   // initial matrix top left corner
-    int w;      // width
-    int h;      // height
-} Task;
 
 pthread_barrier_t barrier; 
 pthread_barrierattr_t attr;
@@ -45,23 +36,16 @@ pthread_cond_t work_cv = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;    
 pthread_cond_t display_cv = PTHREAD_COND_INITIALIZER;
 
-pthread_mutex_t done_mutex = PTHREAD_MUTEX_INITIALIZER;    
-pthread_cond_t done_cv = PTHREAD_COND_INITIALIZER;
-
-pthread_mutex_t diamond_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t square_mutex = PTHREAD_MUTEX_INITIALIZER;   
-
 int stop_signal;
-
-std::queue<Task> diamondTasks;
-std::queue<Task> squareTasks;
 
 SDL_Surface *screen;
 int heightmap[WIDTH + 1][HEIGHT + 1];
 SDL_Event event;
 
-static void square_step(SDL_Rect *r, float deviance);
-static void get_keypress(void);
+int w = WIDTH;
+int h = HEIGHT;
+float deviance = 1.0;
+
 static void shift_all(int amnt);
 
 static int rand_range(int low, int high) {
@@ -101,23 +85,14 @@ static void heightmap_to_screen(SDL_Surface *s) {
     for (e = 0; e < HEIGHT ; ++e) {
         for (i = 0; i < WIDTH; ++i) {
             set_point(i, e, height_to_colour(heightmap[i][e], s));
-            //std::cout << heightmap[i][e] << " ";
         }
-        //std::cout << std::endl;
     }
 }
 
 static int rect_avg_heights(SDL_Rect *r) {
     int total;
-    // // UPPER LEFT
-    // total = heightmap[r->x - r->w / 2][r->y - r->y / 2];
-    // // UPPER RIGHT
-    // total += heightmap[r->x - r->w / 2][r->y + r->y / 2];
-    // // LOWER LEFT
-    // total += heightmap[r->x + r->w / 2][r->y - r->y / 2];
-    // // LOWER RIGHT
-    // total += heightmap[r->x + r->w / 2][r->y + r->y / 2];
-        total = heightmap[r->x][r->y];
+
+    total = heightmap[r->x][r->y];
     total += heightmap[(r->x + r->w) % WIDTH][r->y];
     total += heightmap[r->x][r->y + r->h];
     total += heightmap[(r->x + r->w) % WIDTH][r->y + r->h];
@@ -131,28 +106,25 @@ static int diam_avg_heights(SDL_Rect *r) {
 
     divisors = 1;
     total = 0;
-   
+
     //TOP
-    if (r->x - r->w / 2 >= 0) {
-        total += heightmap[r->x - r->w / 2][r->y];
+    if (r->y >= 0) {
+        total += heightmap[r->x + r->w / 2][r->y];
         divisors++;
     }
-    
+
     //LEFT
-    if (r->y - r->h / 2 >= 0) {
-        total += heightmap[r->x][r->y - r->h / 2];
-        divisors++;
-    }
-    
-    //RIGHT
-    if (r->y + r->h / 2 <= HEIGHT) {
+    if (r->x >= 0) {
         total += heightmap[r->x][r->y + r->h / 2];
         divisors++;
     }
-    
+
+    //RIGHT
+    total += heightmap[(r->x + r->w) % WIDTH][r->y + r->h / 2];
+
     //BOTTOM
-    if (r->x + r->w / 2 <= WIDTH) {
-        total += heightmap[r->x + r->w / 2][r->y];
+    if (r->y + r->h < HEIGHT) {
+        total += heightmap[r->x + r->w / 2][r->y + r->h];
         divisors++;
     }
 
@@ -164,6 +136,29 @@ static int diam_avg_heights(SDL_Rect *r) {
     return total / divisors;
 }
 
+static void draw_all_squares(int startx, int starty, int W, int H, int w, int h, float deviance) {
+    SDL_Rect r;
+    r.w = w;
+    r.h = h;
+
+    for (r.y = starty; r.y < H; r.y += r.h)
+        for (r.x = startx; r.x < W; r.x += r.w)
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] = rect_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+}
+
+static void draw_all_diamonds(int startx, int starty, int W, int H, int w, int h, float deviance) {
+    SDL_Rect r;
+    r.w = w;
+    r.h = h;
+
+    for (r.y = starty - r.h / 2; r.y < H; r.y += r.h)
+        for (r.x = startx; r.x < W; r.x += r.w)
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] = diam_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+    for (r.y = starty; r.y < H; r.y += r.h)
+        for (r.x = startx - r.w / 2; r.x + r.w / 2 < W; r.x += r.w)
+            heightmap[r.x + r.w / 2][r.y + r.h / 2] = diam_avg_heights(&r) + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
+}
+
 static void shift_all(int amnt) {
     int i, e;
     for (e = 0; e < HEIGHT + 1; ++e)
@@ -172,9 +167,6 @@ static void shift_all(int amnt) {
 }
 
 static void *make_map(void *args) {
-    int w = WIDTH;
-    int h = HEIGHT;
-    float deviance;
     int i, e;
     int status;
 
@@ -183,14 +175,6 @@ static void *make_map(void *args) {
 
     long my_id = (long)args;
     srand(time(NULL));
-
-    //SDL_Surface *screen1;
-    //printf("Starting thread: %ld\n", my_id);
-
-    // if (my_id == 1) {
-    //     SDL_Init(SDL_INIT_EVERYTHING);
-    //     screen1 = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
-    // }
 
     while (1) {
 
@@ -209,20 +193,11 @@ static void *make_map(void *args) {
             pthread_exit(NULL);
         }
 
-        int chillax;
-        Task t;
-        SDL_Rect r;
-        deviance = 1.0;
         w = WIDTH;
         h = HEIGHT;
+        deviance = 1;
 
-        if (my_id == 1) {
-
-            Task t;
-            t.x = 0; t.y = 0;
-            t.w = WIDTH; t.h = HEIGHT;
-
-            clock_gettime(CLOCK_REALTIME, &start);
+        if (my_id == 0) {
 
             //Reset the whole heightmap to the minimum height
             for (e = 0; e < HEIGHT + 1; ++e)
@@ -232,224 +207,84 @@ static void *make_map(void *args) {
             //Add our starting corner points
             heightmap[0][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
             heightmap[0][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
-            // heightmap[WIDTH][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
-            // heightmap[WIDTH][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
-
-            //std::cout << heightmap[0][0] << "!!" << heightmap[0][HEIGHT] << std::endl;
-
-            status = pthread_mutex_lock(&diamond_mutex);
-            if (status) err_abort(status, "lock mutex");
-
-            diamondTasks.push(t);
-
-            status = pthread_mutex_unlock(&diamond_mutex);
-            if (status) err_abort(status, "unlock mutex");
         }
 
-            ///printf ("Thread %ld: waiting at barrier 1 w= %d h = %d\n", my_id, w, h);
         pthread_barrier_wait (&barrier);
+
+        clock_gettime(CLOCK_REALTIME, &start);
+        if (my_id == 0) {
+            while (h >= 2 && w >= 2) {
+                draw_all_squares(0, 0, WIDTH, HEIGHT, w, h, deviance);
+                draw_all_diamonds(0, 0, WIDTH, HEIGHT, w, h, deviance);
+
+                w /= 2;
+                h /= 2;
+
+                deviance *= REDUCTION;
+
+                if (pow(4, (HEIGHT /  (2 * h))) == NUM_THREADS) {
+                    break;
+                }
+            }
+        }
+
+        pthread_barrier_wait (&barrier);
+
+        int startx = 0;
+        int starty = 0;
+        int local_w = w;
+        int local_h = h;
+        float local_deviance = deviance;
+
+        int proc = 0;
+        for (i = 0; i < HEIGHT; i += h) {
+            for (e = 0; e < WIDTH; e += w) {
+                if (proc == my_id) {
+                    startx = e;
+                    starty = i;
+                }
+                proc++;
+            }
+        }
+
+        int local_W = startx + w;
+        int local_H = starty + h;
 
 
         // Else do work and create map
-        while (1) {
-
-            // Start diamond step
-            while (1) {
-                chillax = 0;
-
-                status = pthread_mutex_lock(&diamond_mutex);
-                if (status) err_abort(status, "lock mutex");
-
-                if (!diamondTasks.empty()) {
-                    //printf ("Thread %ld: got size %ld\n", my_id, diamondTasks.size());
-                    t = diamondTasks.front();
-                    diamondTasks.pop();
-                } else {
-                    chillax = 1;
-                }
-
-                status = pthread_mutex_unlock(&diamond_mutex);
-                if (status) err_abort(status, "unlock mutex");
-
-                if (chillax) {
-                    //printf ("Thread %ld: got no diamond task\n", my_id);
-                    break;
-                }
-
-                // Do diamonds Task
-                //printf ("Thread diamond %ld: w = %d h = %d\n", my_id, w, h);
-                //printf ("Thread %ld: doing diamonds task x = %d y = %d w = %d h = %d\n", my_id, t.x, t.y, t.w, t.h);
-                r.w = t.w; r.h = t.h;
-                r.x = t.x; r.y = t.y;
-
-                heightmap[r.x + r.w / 2][r.y + r.h / 2] = 
-                    rect_avg_heights(&r)
-                        + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-
-
-                status = pthread_mutex_lock(&square_mutex);
-                if (status) err_abort(status, "lock mutex");
-
-                squareTasks.push(t);
-
-                status = pthread_mutex_unlock(&square_mutex);
-                if (status) err_abort(status, "unlock mutex");
-            }
-
-
-            // Wait all threads
-           // printf ("Thread %ld: waiting at barrier 2 w= %d h = %d\n", my_id, w, h);
-            pthread_barrier_wait(&barrier);
-            if (my_id == 1) {
-                // std::ostringstream oss;
-                // for (e = 0; e < HEIGHT + 1; ++e) {
-                // for (i = 0; i < WIDTH + 1; ++i) {
-                // oss << heightmap[i][e] << " ";
-                // }
-                // oss << "\n";
-                // }
-                //                 oss << "\n END ITER \n";  
-                // std::cout << oss.str();
-            }
-             //           printf ("Thread %ld: waiting at barrier aux w= %d h = %d\n", my_id, w, h);
+        while (local_h >= 2 && local_w >= 2) {
+            // Individual computation
+            draw_all_squares(startx, starty, local_W, local_H, local_w, local_h, local_deviance);
             pthread_barrier_wait(&barrier);
 
-            // Start square step
-            while (1) {
-                chillax = 0;
-
-                status = pthread_mutex_lock(&square_mutex);
-                if (status) err_abort(status, "lock mutex");
-
-                if (!squareTasks.empty()) {
-                    t = squareTasks.front();
-                    squareTasks.pop();
-                } else {
-                    chillax = 1;
-                }
-
-                status = pthread_mutex_unlock(&square_mutex);
-                if (status) err_abort(status, "unlock mutex");
-
-                if (chillax) {
-                    //printf ("Thread %ld: got no square task\n", my_id);
-                    break;
-                }
-
-                // Do square task
-                //printf ("Thread %ld: doing square task x = %d y = %d w = %d h = %d\n", my_id, t.x, t.y, t.w, t.h);
-            //printf ("Thread square%ld: w = %d h = %d\n", my_id, w, h);
-                Task new_task;
-                new_task.w = t.w / 2; new_task.h = t.h / 2;
-
-                r.w = t.w; r.h = t.h;
-
-                //  x ..o.. x
-                //    ..x.. 
-                //  x ..... x
-                //
-                r.x = t.x; r.y = t.y + t.h / 2;
-                heightmap[r.x][r.y] =
-                    diam_avg_heights(&r)
-                        + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-
-                //  x ..... x
-                //  o ..x.. 
-                //  x ..... x
-                //
-                r.x = t.x + t.w / 2; r.y = t.y;
-                heightmap[r.x][r.y] =
-                    diam_avg_heights(&r)
-                        + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-
-                //  x ..... x
-                //    ..x.. 
-                //  x ..o.. x
-                //
-                r.x = t.x + t.w; r.y = t.y + t.h / 2;
-                heightmap[r.x][r.y] =
-                    diam_avg_heights(&r)
-                        + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-
-                //  x ..... x
-                //    ..x.. o
-                //  x ..... x
-                //
-                r.x = t.x + t.w / 2; r.y = t.y + t.h;
-                heightmap[r.x][r.y] =
-                    diam_avg_heights(&r)
-                        + rand_range(-RANGE_CHANGE, RANGE_CHANGE) * deviance;
-
-                // Create new tasks
-                if (t.h >= 2 && t.w >= 2) {
-                    status = pthread_mutex_lock(&diamond_mutex);
-                    if (status) err_abort(status, "lock mutex");
-
-                    // stanga sus
-                    new_task.x = t.x; new_task.y = t.y;
-                    diamondTasks.push(new_task);
-
-                    // sus mijloc
-                    new_task.x = t.x; new_task.y = t.y + t.h / 2;
-                    diamondTasks.push(new_task);
-
-                    // stanga mijloc
-                    new_task.x = t.x + t.w / 2; new_task.y = t.y;
-                    diamondTasks.push(new_task);
-
-                    // mijloc mijloc
-                    new_task.x = t.x + t.w / 2; new_task.y = t.y + t.h / 2;
-                    diamondTasks.push(new_task);
-
-                    status = pthread_mutex_unlock(&diamond_mutex);
-                    if (status) err_abort(status, "unlock mutex");
-                }            
-            }
-
-            // Wait all threads
-            //printf ("Thread %ld: waiting at barrier 3 w= %d h = %d\n", my_id, w, h);
+            draw_all_diamonds(startx, starty, local_W, local_H, local_w, local_h, local_deviance);
             pthread_barrier_wait(&barrier);
 
-            if (diamondTasks.empty()) {
+            local_w /= 2;
+            local_h /= 2;
 
-                // Signal master thread work done
-                if (my_id == 1) {
-                    //heightmap_to_screen();
-                    clock_gettime(CLOCK_REALTIME, &stop);
-
-                    accum = ( stop.tv_sec - start.tv_sec )
-                             + (double)( stop.tv_nsec - start.tv_nsec )
-                               / (double)1000000000;
-                    printf("[PTHREADS] Make_map: %lf\n", accum);
-
-                    status = pthread_mutex_lock(&display_mutex);
-                    if (status) err_abort(status, "lock mutex");
-
-                    status = pthread_cond_signal(&display_cv);
-                    if (status) err_abort(status, "signal condition");
-
-                    status = pthread_mutex_unlock(&display_mutex);
-                    if (status) err_abort(status, "unlock mutex");
-                }
-
-                break;
-            }
-
-            //printf ("Thread %ld: waiting at barrier 4 w= %d h = %d\n", my_id, w, h);
-            pthread_barrier_wait(&barrier);
-            deviance *= REDUCTION;
-            w /= 2; h /= 2;
+            local_deviance *= REDUCTION;
         }
 
-        // Display done
-        // status = pthread_mutex_lock(&done_mutex);
-        // if (status) err_abort(status, "lock mutex");
+        pthread_barrier_wait(&barrier);
 
-        // status = pthread_cond_wait(&done_cv, &done_mutex);
-        // if (status) err_abort(status, "wait for condition");
+        if (my_id == 0) {
+            clock_gettime(CLOCK_REALTIME, &stop);
 
-        // status = pthread_mutex_unlock(&done_mutex);
-        // if (status) err_abort(status, "unlock mutex");
+            accum = ( stop.tv_sec - start.tv_sec )
+                + (double)( stop.tv_nsec - start.tv_nsec )
+                    / (double)BILLION;
+            printf("[PTHREADS] Make_map: %lf\n", accum);
+
+            status = pthread_mutex_lock(&display_mutex);
+            if (status) err_abort(status, "lock mutex");
+
+            status = pthread_cond_signal(&display_cv);
+            if (status) err_abort(status, "signal condition");
+
+            status = pthread_mutex_unlock(&display_mutex);
+            if (status) err_abort(status, "unlock mutex");
+        }
     }
 }
 
@@ -475,7 +310,6 @@ int main(void) {
         if (status) err_abort(status, "create thread");
     }
 
-    int pressed_once = 1;
     // Poll SDL events
     while (1) {
         SDL_PollEvent(&event);
@@ -528,7 +362,7 @@ int main(void) {
                 SDL_Flip(screen);
             } else
                 continue;
-            SDL_Delay(1000);
+           //SDL_Delay(1);
         }
     }
 
@@ -549,12 +383,6 @@ int main(void) {
 
     pthread_mutex_destroy(&display_mutex);
     pthread_cond_destroy(&display_cv);
-
-    pthread_mutex_destroy(&done_mutex);
-    pthread_cond_destroy(&done_cv);
-
-    pthread_mutex_destroy(&diamond_mutex);
-    pthread_mutex_destroy(&square_mutex);
 
     pthread_exit(NULL);
 
