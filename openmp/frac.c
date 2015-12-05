@@ -6,8 +6,8 @@
 #include <omp.h>
 
 
-#define WIDTH 4096 * 2
-#define HEIGHT 4096 * 2
+#define WIDTH 4096 
+#define HEIGHT 4096
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
@@ -24,7 +24,7 @@ typedef struct {
 } Point;
 
 SDL_Surface *screen;
-int heightmap[WIDTH +1][HEIGHT + 1];
+int heightmap[WIDTH + 1][HEIGHT + 1];
 SDL_Event event;
 
 static void square_step(SDL_Rect *r, float deviance);
@@ -146,7 +146,7 @@ static void make_map(void) {
             heightmap[WIDTH][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
         }
         
-        while(w >= 2 && h >= 2) {
+        while(w >= 2 || h >= 2) {
                
             // Diamond step 
             // clock_gettime(CLOCK_REALTIME, &start12);
@@ -259,17 +259,30 @@ static void make_map(void) {
     SDL_Flip(screen);
 }
 
-static void get_keypress(void) {
+int main(void) {
 
-    //heightmap_to_screen();
-    SDL_Flip(screen);
+    struct timespec start, stop;
+    double accum;
 
+    // Init SDL
+    srand(time(NULL));
+    SDL_Init(SDL_INIT_EVERYTHING);
+    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
+
+    // Init openmp
+    omp_set_dynamic(0);
+    omp_set_num_threads(NUM_THREADS);
+
+    // Make initial map
+    make_map();
+
+    // Poll SDL
     while (1) {
         SDL_PollEvent(&event);
 
         if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
-                exit(0);
+                break;
             }
             else if (event.key.keysym.sym == SDLK_RIGHTBRACKET) {
                 shift_all(200);
@@ -279,32 +292,8 @@ static void get_keypress(void) {
             }
             else if (event.key.keysym.sym == SDLK_SPACE) {
                 make_map();
-            } else
-                break;
+            }
         }
-
-        //SDL_Flip(screen);
-        //SDL_Delay(10);
-    }
-}
-
-
-int main(void) {
-    srand(time(NULL));
-    SDL_Init(SDL_INIT_EVERYTHING);
-    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
-
-    struct timespec start, stop;
-    double accum;
-
-    omp_set_dynamic(0);
-    omp_set_num_threads(NUM_THREADS);
-    make_map();
-
-    SDL_Flip(screen);
-
-    while(1) {
-        get_keypress();
     }
 
     SDL_FreeSurface(screen);

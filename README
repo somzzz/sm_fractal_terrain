@@ -1,5 +1,11 @@
+LMC 341C1
+
 Requires SDL
 sudo apt-get install libsdl-ttf2.0-dev
+
+Test project for comparing various parallel solutions: OpenMP, MPI, POSIX threads and hybrid.
+Original project found at:
+https://github.com/0xAether/Fractal-Terrain-Test
 
 Controls:
 

@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define WIDTH 4096 * 2
-#define HEIGHT 4096 * 2
+#define WIDTH 4096
+#define HEIGHT 4096
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
@@ -149,7 +149,6 @@ static void make_map(void) {
     int i, e;
 
     //Reset the whole heightmap to the minimum height
-
     for (e = 0; e < HEIGHT; ++e)
          for (i = 0; i < WIDTH; ++i)
              heightmap[i][e] = MINHEIGHT;
@@ -178,19 +177,36 @@ static void make_map(void) {
     }
 }
 
-static void get_keypress(void) {
+
+int main(void) {
+
+    // Init SDL
+    srand(time(NULL));
+    SDL_Init(SDL_INIT_EVERYTHING);
+    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
+
     struct timespec start, stop;
     double accum;
 
-    //heightmap_to_screen();
+    // Measure time to make initial map
+    clock_gettime(CLOCK_REALTIME, &start);
+    make_map();
+    heightmap_to_screen();
+    clock_gettime(CLOCK_REALTIME, &stop);
+
+    accum = ( stop.tv_sec - start.tv_sec )
+             + (double)( stop.tv_nsec - start.tv_nsec )
+               / (double)1000000000;
+    printf("[SERIAL] Make_map: %lf\n", accum);
     SDL_Flip(screen);
 
+    // Poll SDL events
     while (1) {
         SDL_PollEvent(&event);
 
         if (event.type == SDL_KEYDOWN) {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
-                exit(0);
+                break;
             }
             else if (event.key.keysym.sym == SDLK_RIGHTBRACKET) {
                 shift_all(200);
@@ -210,36 +226,13 @@ static void get_keypress(void) {
                         / (double)BILLION;
                 printf("[SERIAL] Overall time on key pressed event: %lf\n", accum);
             } else
-                break;
+                continue;
         }
 
         SDL_Flip(screen);
     }
-}
 
-int main(void) {
-    srand(time(NULL));
-    SDL_Init(SDL_INIT_EVERYTHING);
-    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
-
-    struct timespec start, stop;
-    double accum;
-
-    clock_gettime(CLOCK_REALTIME, &start);
-    make_map();
-    heightmap_to_screen();
-    clock_gettime(CLOCK_REALTIME, &stop);
-
-    accum = ( stop.tv_sec - start.tv_sec )
-             + (double)( stop.tv_nsec - start.tv_nsec )
-               / (double)1000000000;
-    printf("[SERIAL] Make_map: %lf\n", accum);
-    SDL_Flip(screen);
-
-    while(1) {
-        get_keypress();
-    }
-
+    // Close resources
     SDL_FreeSurface(screen);
     SDL_Quit();
 
