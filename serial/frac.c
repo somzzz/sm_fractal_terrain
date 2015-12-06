@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define WIDTH 1024
-#define HEIGHT 1024
+#define WIDTH 4096
+#define HEIGHT 4096
 #define MINHEIGHT (-20000)
 #define MAXHEIGHT 20000
 #define BILLION  1000000000L;
