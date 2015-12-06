@@ -27,8 +27,6 @@ SDL_Surface *screen;
 int heightmap[WIDTH + 1][HEIGHT + 1];
 SDL_Event event;
 
-static void square_step(SDL_Rect *r, float deviance);
-static void get_keypress(void);
 static void shift_all(int amnt);
 
 static int rand_range(int low, int high) {
@@ -118,9 +116,9 @@ static void make_map(void) {
     register float deviance;
     register int i, e;
 
-    register int id = omp_get_thread_num();
+    //register int id = omp_get_thread_num();
 
-    struct timespec start, stop, start1, stop1, start12, stop12;
+    struct timespec start, stop; //start1, stop1, start12, stop12;
     double accum;
     int rx, ry;
 
@@ -128,7 +126,7 @@ static void make_map(void) {
     deviance = 1.0;
     clock_gettime(CLOCK_REALTIME, &start);
 
-    #pragma omp parallel private(id, i, e, rx, ry) shared(w, h)
+    #pragma omp parallel private(i, e, rx, ry) shared(w, h)
     {
         //Reset the whole heightmap to the minimum height
         #pragma omp for
@@ -260,9 +258,6 @@ static void make_map(void) {
 }
 
 int main(void) {
-
-    struct timespec start, stop;
-    double accum;
 
     // Init SDL
     srand(time(NULL));

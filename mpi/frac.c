@@ -40,9 +40,6 @@ SDL_Event event;
 
 int myid, numprocs;
 
-
-static void square_step(SDL_Rect *r, float deviance);
-static void get_keypress(void);
 static void shift_all(int amnt);
 
 static int rand_range(int low, int high) {
@@ -172,41 +169,6 @@ static void shift_all(int amnt) {
             heightmap[i][e] += amnt;
 }
 
-static void make_map(void) {
-    int w = WIDTH;
-    int h = HEIGHT;
-    float deviance;
-    int i, e;
-
-    //Reset the whole heightmap to the minimum height
-    for (e = 0; e < HEIGHT; ++e)
-         for (i = 0; i < WIDTH; ++i)
-             heightmap[i][e] = MINHEIGHT;
-
-    //Add our starting corner points
-    heightmap[0][0] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
-    heightmap[0][HEIGHT] = rand_range(-RANGE_CHANGE, RANGE_CHANGE);
-
-    deviance = 1.0;
-    while (1) {
-        draw_all_squares(w, h, deviance);
-        draw_all_diamonds(w, h, deviance);
-
-        w /= 2;
-        h /= 2;
-
-        if (w < 2 && h < 2)
-            break;
-
-        if (w < 2)
-            w = 2;
-        if (h < 2)
-            h = 2;
-
-        deviance *= REDUCTION;
-    }
-}
-
 int main(int argc, char *argv[]) {
     const int master = 0;
     int should_continue = 0;
@@ -290,6 +252,7 @@ int main(int argc, char *argv[]) {
         MPI_Bcast(&w, 1, MPI_INT, master, MPI_COMM_WORLD);
         MPI_Bcast(&deviance, 1, MPI_FLOAT, master, MPI_COMM_WORLD);
 
+        //int borders[numprocs][4];
         int *buffer = (int *) calloc(w * h, sizeof(int));
         int H = h, W = w;
 
@@ -399,7 +362,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        printf("Process %d waiting on should_continue\n", myid);
+        //printf("Process %d waiting on should_continue\n", myid);
         
         // Find out from master if the program should close or create another map.
         MPI_Bcast(&should_continue, 1, MPI_INT, master, MPI_COMM_WORLD);
